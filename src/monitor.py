@@ -11,9 +11,9 @@ MLflow integration:
   - Links to the current Production model run_id in tags
 
 Usage:
-    python monitor.py
-    python monitor.py --production data/new_batch.csv
-    python monitor.py --report-only   # EvidentlyAI HTML only, no MLflow
+    python src/monitor.py
+    python src/monitor.py --production data/new_batch.csv
+    python src/monitor.py --report-only   # EvidentlyAI HTML only, no MLflow
 """
 
 import argparse
@@ -43,6 +43,9 @@ DRIFT_CFG = CFG["drift"]
 PATHS = CFG["paths"]
 SLO = CFG["slo"]
 MLFLOW_CFG = CFG["mlflow"]
+MLFLOW_CFG["tracking_uri"] = os.getenv(
+    "MLFLOW_TRACKING_URI", MLFLOW_CFG["tracking_uri"]
+)
 CLASS_NAMES = ["setosa", "versicolor", "virginica"]
 
 
@@ -387,7 +390,7 @@ def run_monitoring_cycle(production_path=None, report_only=False) -> Dict:
     print("\n" + "=" * 55)
     if results["trigger_retraining"]:
         print(f"  RETRAINING TRIGGERED 🚨  reasons: {', '.join(triggers)}")
-        print("  Run: python pipeline.py")
+        print("  Run: python src/pipeline.py")
     else:
         print("  All checks passed ✅  No retraining needed.")
     print("=" * 55)

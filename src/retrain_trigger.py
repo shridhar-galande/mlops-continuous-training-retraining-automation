@@ -11,9 +11,9 @@ MLflow integration:
   - Links to the current Production model run_id
 
 Usage:
-    python retrain_trigger.py
-    python retrain_trigger.py --type drift
-    python retrain_trigger.py --dry-run
+    python src/retrain_trigger.py
+    python src/retrain_trigger.py --type drift
+    python src/retrain_trigger.py --dry-run
 """
 
 import argparse
@@ -43,6 +43,9 @@ TRIGGERS = CFG["triggers"]
 DRIFT_CFG = CFG["drift"]
 SLO = CFG["slo"]
 MLFLOW_CFG = CFG["mlflow"]
+MLFLOW_CFG["tracking_uri"] = os.getenv(
+    "MLFLOW_TRACKING_URI", MLFLOW_CFG["tracking_uri"]
+)
 
 
 def _safe(obj):
@@ -96,7 +99,8 @@ def _last_retrain():
     path = PATHS.get("retrain_log", "logs/retrain_history.json")
     if not os.path.exists(path):
         return None
-    hist = json.load(open(path))
+    with open(path) as f:
+        hist = json.load(f)
     promo = [e for e in hist if e.get("event") == "model_promoted"]
     if not promo:
         return None

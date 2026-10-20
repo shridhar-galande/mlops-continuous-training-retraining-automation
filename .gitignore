@@ -32,6 +32,7 @@ coverage.xml
 # Logs and runtime files
 logs/
 *.log
+*.pid
 
 # Environment variables
 .env
@@ -39,6 +40,12 @@ logs/
 
 # MLflow
 mlruns/
+mlflow.db
+mlflow.db-shm
+mlflow.db-wal
+*.sqlite
+*.sqlite3
+state/
 
 # Model and artifact files
 *.pkl
@@ -51,6 +58,11 @@ models/
 
 # Generated reports
 reports/
+
+# Docker/build output
+dist/
+build/
+.docker/
 
 # OS files
 .DS_Store

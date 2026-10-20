@@ -14,10 +14,10 @@ MLflow parent run structure:
       └── evaluation run   (child)
 
 Usage:
-    python pipeline.py               # full automated pipeline
-    python pipeline.py --retrain     # skip trigger, force retrain
-    python pipeline.py --monitor-only
-    python pipeline.py --dry-run     # evaluate but do NOT promote
+    python src/pipeline.py               # full automated pipeline
+    python src/pipeline.py --retrain     # skip trigger, force retrain
+    python src/pipeline.py --monitor-only
+    python src/pipeline.py --dry-run     # evaluate but do NOT promote
 """
 
 import argparse
@@ -37,6 +37,9 @@ with open("config.yaml") as f:
 
 PATHS = CFG["paths"]
 MLFLOW_CFG = CFG["mlflow"]
+MLFLOW_CFG["tracking_uri"] = os.getenv(
+    "MLFLOW_TRACKING_URI", MLFLOW_CFG["tracking_uri"]
+)
 
 
 def _safe(obj):
@@ -118,6 +121,8 @@ def run_pipeline(force_retrain=False, monitor_only=False, dry_run=False) -> Dict
             run_record["monitor"] = {
                 "trigger_retraining": mon.get("trigger_retraining"),
                 "trigger_reasons": mon.get("trigger_reasons", []),
+                "feature_drift": mon.get("feature_drift", {}),
+                "performance": mon.get("performance", {}),
             }
             mlflow.log_metrics(
                 {
@@ -142,6 +147,7 @@ def run_pipeline(force_retrain=False, monitor_only=False, dry_run=False) -> Dict
                     "retrain": trig["retrain"],
                     "triggered_by": trig["triggered_by"],
                 }
+                run_record["trigger_results"] = trig["trigger_results"]
                 run_record["trigger_reasons"] = trig["triggered_by"]
                 mlflow.log_metric("trigger_retrain", float(trig["retrain"]))
 
@@ -269,11 +275,14 @@ def run_pipeline(force_retrain=False, monitor_only=False, dry_run=False) -> Dict
 def _log_and_exit(rec, run_id):
     import mlflow as _ml
 
+    end = datetime.now(timezone.utc)
+    rec["end_time"] = end.isoformat()
+    rec["duration_secs"] = round(
+        (end - datetime.fromisoformat(rec["start_time"])).total_seconds(), 2
+    )
     _ml.log_metric(
         "pipeline_duration_secs",
-        (
-            datetime.now(timezone.utc) - datetime.fromisoformat(rec["start_time"])
-        ).total_seconds(),
+        rec["duration_secs"],
     )
     os.makedirs("logs", exist_ok=True)
     path = "logs/pipeline_runs.json"

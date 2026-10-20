@@ -13,8 +13,8 @@ MLflow integration:
   - Tags runs with evaluation outcome
 
 Usage:
-    python evaluate.py              # evaluate & print results
-    python evaluate.py --promote    # auto-promote if all gates pass
+    python src/evaluate.py              # evaluate & print results
+    python src/evaluate.py --promote    # auto-promote if all gates pass
 """
 
 import argparse
@@ -48,6 +48,9 @@ TARGET_COL = CFG["features"]["target"]
 GATES = CFG["evaluation_gates"]
 PATHS = CFG["paths"]
 MLFLOW_CFG = CFG["mlflow"]
+MLFLOW_CFG["tracking_uri"] = os.getenv(
+    "MLFLOW_TRACKING_URI", MLFLOW_CFG["tracking_uri"]
+)
 CLASS_NAMES = ["setosa", "versicolor", "virginica"]
 
 
@@ -488,7 +491,7 @@ def run_evaluation(candidate_path: str = None, auto_promote: bool = False) -> Di
             promote_local_pkl()
             promoted = True
     elif all_passed and not auto_promote:
-        print("\nCandidate ready. Run: python evaluate.py --promote")
+        print("\nCandidate ready. Run: python src/evaluate.py --promote")
     elif not all_passed:
         print("\nCandidate REJECTED.")
 

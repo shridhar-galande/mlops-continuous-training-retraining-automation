@@ -7,7 +7,7 @@ Creates all datasets needed for the continuous training pipeline:
   - data/golden.csv       → curated golden dataset with known correct labels
 
 Run once at project setup:
-    python data_generator.py
+    python src/data_generator.py
 """
 
 import numpy as np

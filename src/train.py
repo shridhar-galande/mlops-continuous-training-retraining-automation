@@ -15,9 +15,9 @@ MLflow tracks:
   - Data source tag       (set_tags)
 
 Usage:
-    python train.py                  # train on reference data
-    python train.py --combine        # combine reference + production (retraining)
-    python train.py --data path.csv  # use a custom CSV
+    python src/train.py                  # train on reference data
+    python src/train.py --combine        # combine reference + production (retraining)
+    python src/train.py --data path.csv  # use a custom CSV
 """
 
 import argparse
@@ -58,6 +58,9 @@ TARGET_COL = CFG["features"]["target"]
 MODEL_CFG = CFG["model"]
 PATHS = CFG["paths"]
 MLFLOW_CFG = CFG["mlflow"]
+MLFLOW_CFG["tracking_uri"] = os.getenv(
+    "MLFLOW_TRACKING_URI", MLFLOW_CFG["tracking_uri"]
+)
 CLASS_NAMES = ["setosa", "versicolor", "virginica"]
 
 
@@ -85,7 +88,7 @@ def _safe(obj):
 
 def load_data(path: str) -> pd.DataFrame:
     if not os.path.exists(path):
-        raise FileNotFoundError(f"{path} not found. Run: python data_generator.py")
+        raise FileNotFoundError(f"{path} not found. Run: python src/data_generator.py")
     df = pd.read_csv(path)
     print(f"Loaded {path}  ({len(df)} rows)")
     return df
@@ -344,7 +347,7 @@ def run_training(data_path: str = None, combine: bool = False) -> Dict:
     print(
         f"  View UI:           mlflow ui --backend-store-uri {MLFLOW_CFG['tracking_uri']}"
     )
-    print("Next step: python evaluate.py --promote")
+    print("Next step: python src/evaluate.py --promote")
     return metrics
 
 

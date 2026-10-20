@@ -1,13 +1,17 @@
 """
-tests/test_pipeline.py
+src/tests/test_pipeline.py
 ======================
 Unit tests for the Iris CT pipeline components.
-Run with:  pytest tests/ -v
+Run with:  pytest src/tests/ -v
 """
 
+import json
 import os
 import pickle
 import sys
+import threading
+from http.server import ThreadingHTTPServer
+from urllib.request import Request, urlopen
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -93,6 +97,73 @@ def test_psi_with_drift(iris_df):
     prod = ref + 0.8  # clear shift
     psi = compute_psi(ref, prod)
     assert psi > 0.10, f"PSI={psi} should detect shift"
+
+
+def test_demo_production_batch_triggers_feature_drift(iris_df):
+    from monitor import run_feature_drift
+    from monitoring_service import build_demo_production
+
+    production = build_demo_production(iris_df)
+    result = run_feature_drift(iris_df, production, FEATURE_COLS)
+
+    assert len(production) >= 50
+    assert result["trigger_retraining"]
+
+
+def test_submitted_demo_records_expand_and_trigger_drift(iris_df):
+    from monitoring_service import build_trigger_batch
+
+    records = iris_df.iloc[:3].to_dict(orient="records")
+    production = build_trigger_batch(records)
+
+    assert len(production) >= 50
+    assert set(production[TARGET_COL]) == set(iris_df[TARGET_COL].iloc[:3])
+    assert np.allclose(
+        production["sepal_width"].iloc[:3].values,
+        iris_df["sepal_width"].iloc[:3].values + 1.0,
+    )
+
+
+def test_demo_ingest_endpoint_runs_pipeline(iris_df, monkeypatch, tmp_path):
+    import monitoring_service as service
+
+    records = iris_df.iloc[:3].to_dict(orient="records")
+    production_path = tmp_path / "production.csv"
+    monkeypatch.setattr(service, "DEMO_MODE_ENABLED", True)
+    monkeypatch.setitem(service.PATHS, "production_data", str(production_path))
+    monkeypatch.setattr(
+        service,
+        "_execute_pipeline_cycle",
+        lambda: {
+            "monitor": {"trigger_retraining": True},
+            "trigger": {"retrain": True, "triggered_by": ["drift"]},
+            "outcome": "evaluation_failed",
+            "promoted": False,
+        },
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), service.DemoIngestHandler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}/demo/records",
+            data=json.dumps({"records": records}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            result = json.loads(response.read())
+        assert result["records_received"] == 3
+        assert result["production_rows"] >= 50
+        assert result["monitor_trigger"] is True
+        assert result["retrain"] is True
+        assert result["outcome"] == "evaluation_failed"
+        assert len(pd.read_csv(production_path)) >= 50
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 def test_ks_no_drift(iris_df):
