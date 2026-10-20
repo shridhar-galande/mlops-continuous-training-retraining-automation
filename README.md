@@ -315,30 +315,29 @@ $result | Format-List
 
 The response should report `records_received: 3`, at least 50
 `production_rows`, and `monitor_trigger: True`, `retrain: True`, with `drift`
-in `triggered_by`. The pipeline logs should then show the `TRIGGER`, `TRAIN`,
-and `EVALUATE` stages. In Grafana, refresh **Iris MLOps Retraining Demo** and
-look for `mlops_retrain_trigger = 1` and the drift trigger reason. The API
-returns the pipeline `outcome`; retraining may be triggered even if the
-candidate later fails evaluation gates and is not promoted.
+in `triggered_by`. This smaller example demonstrates that the trigger fires.
+The candidate can still fail evaluation and not be promoted; for a successful
+promotion example, use the balanced six-sample batch below.
 
 ### Demo a successful retraining and promotion
 
-To demonstrate a candidate that passes the evaluation gates, post this
+To demonstrate a candidate that passes all five evaluation gates, post this
 balanced set of six labelled Iris samples. The API repeats them to the minimum
 batch size and applies the same drift shift, so the drift trigger still fires.
-With the project's default seeded Iris data and model settings, this sample set
-passes the accuracy, F1, per-class recall, and golden-data gates. It replaces
-the previous demo production batch and runs a new local pipeline cycle:
+This batch was verified against the default deployed image and the existing
+Production model (accuracy 0.9792); it scores 1.0 on the evaluation set and
+passes all five gates. It replaces the previous demo production batch and runs
+a new local pipeline cycle:
 
 ```powershell
 $payload = @{
   records = @(
-    @{ sepal_length = 5.1; sepal_width = 3.5; petal_length = 1.4; petal_width = 0.2; species = 0 },
-    @{ sepal_length = 4.9; sepal_width = 3.1; petal_length = 1.5; petal_width = 0.1; species = 0 },
-    @{ sepal_length = 6.4; sepal_width = 3.2; petal_length = 4.5; petal_width = 1.5; species = 1 },
-    @{ sepal_length = 5.9; sepal_width = 3.0; petal_length = 4.2; petal_width = 1.5; species = 1 },
-    @{ sepal_length = 6.3; sepal_width = 3.3; petal_length = 6.0; petal_width = 2.5; species = 2 },
-    @{ sepal_length = 6.5; sepal_width = 3.0; petal_length = 5.5; petal_width = 1.8; species = 2 }
+    @{ sepal_length = 4.8; sepal_width = 3.0; petal_length = 1.4; petal_width = 0.1; species = 0 },
+    @{ sepal_length = 4.8; sepal_width = 3.0; petal_length = 1.4; petal_width = 0.3; species = 0 },
+    @{ sepal_length = 5.9; sepal_width = 3.2; petal_length = 4.8; petal_width = 1.8; species = 1 },
+    @{ sepal_length = 6.7; sepal_width = 3.0; petal_length = 5.0; petal_width = 1.7; species = 1 },
+    @{ sepal_length = 6.7; sepal_width = 3.0; petal_length = 5.2; petal_width = 2.3; species = 2 },
+    @{ sepal_length = 6.4; sepal_width = 2.8; petal_length = 5.6; petal_width = 2.2; species = 2 }
   )
 } | ConvertTo-Json -Depth 5
 
