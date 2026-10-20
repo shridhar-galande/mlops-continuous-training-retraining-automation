@@ -178,19 +178,20 @@ $env:GHCR_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 Remove-Item Env:GHCR_TOKEN
 ```
 
-Copy the exact `docker pull` command from the Actions summary and run it. Then
-use the downloaded image with the repository's Compose configuration:
+The default Compose configuration pulls the published `:latest` image each
+time it starts. To use the exact image from a particular Actions run instead,
+pull that run's tag and set `MLOPS_IMAGE`:
 
 ```powershell
-$env:MLOPS_IMAGE = "ghcr.io/OWNER/REPOSITORY:run-RUN_ID"
+$env:MLOPS_IMAGE = "ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:run-RUN_ID"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 docker compose -f compose.yaml -f compose.image.yaml ps
 ```
 
-Replace `OWNER/REPOSITORY:run-RUN_ID` with the exact image reference from the
-workflow. `compose.image.yaml` overrides the local build configuration to run
-the pulled image. Compose still uses this repository for Prometheus and Grafana
-configuration and automatically pulls their pinned upstream images.
+Replace `run-RUN_ID` with the run tag shown in the Actions summary.
+`compose.image.yaml` lets you select that run-specific image. Compose still
+uses this repository for Prometheus and Grafana configuration and pulls their
+pinned upstream images.
 
 If you are running a fork, Actions publishes to that fork's GHCR package; use
 the package/image URL shown in that workflow run rather than the example above.
@@ -200,7 +201,8 @@ the package/image URL shown in that workflow run rather than the example above.
 Run these commands from the repository root:
 
 ```powershell
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose ps
 docker compose logs -f mlops-demo
 ```
@@ -211,13 +213,14 @@ training and model evaluation. Leave the logs command running to watch each
 pipeline stage; press `Ctrl+C` to stop following logs (the containers continue
 running).
 
-To run from source instead of using the GitHub Actions image:
+To build and run the application from source instead of pulling the GitHub
+Actions image:
 
 ```powershell
 docker pull prom/prometheus:v2.54.1
 docker pull grafana/grafana:11.2.0
-docker build -t iris-mlops-demo:local .
-docker compose up --no-build -d
+docker build -t ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:latest .
+docker compose up --pull never -d
 ```
 
 ### See the retraining trigger
@@ -277,16 +280,19 @@ These rules make alerts visible in Prometheus; they do not send email, Slack, or
 push notifications. A notification receiver (typically Alertmanager) must be
 configured separately if you need alerts delivered outside the Prometheus UI.
 
-### Push test records to trigger retraining now
+### Push these test samples to trigger retraining now
 
-You can submit a few labelled Iris records to the local demo API. It validates
-the records, repeats them to meet the configured minimum drift sample count,
-adds a controlled `sepal_width` shift, saves the batch as production data, and
-runs the monitoring/retraining pipeline immediately. The request waits until
-training and evaluation finish, so allow several minutes on the first request.
-This endpoint is enabled only when `DEMO_MODE=true` (the Compose default).
+Post the three labelled samples below (one for each Iris class) to the local
+demo API. The API repeats the samples to meet the configured minimum drift
+sample count, applies a controlled `sepal_width` shift, saves them as production
+data, and immediately runs the local monitoring/retraining pipeline. This
+starts retraining in the running Compose app; it does not trigger a GitHub
+Actions run. The request waits for training and evaluation to finish, so allow
+several minutes on the first request. The endpoint is enabled only when
+`DEMO_MODE=true` (the Compose default).
 
-In a second Windows PowerShell window, run:
+After starting Compose and waiting for the demo record endpoint to become
+available, copy-paste this in a second Windows PowerShell window:
 
 ```powershell
 $payload = @{
@@ -314,6 +320,45 @@ and `EVALUATE` stages. In Grafana, refresh **Iris MLOps Retraining Demo** and
 look for `mlops_retrain_trigger = 1` and the drift trigger reason. The API
 returns the pipeline `outcome`; retraining may be triggered even if the
 candidate later fails evaluation gates and is not promoted.
+
+### Demo a successful retraining and promotion
+
+To demonstrate a candidate that passes the evaluation gates, post this
+balanced set of six labelled Iris samples. The API repeats them to the minimum
+batch size and applies the same drift shift, so the drift trigger still fires.
+With the project's default seeded Iris data and model settings, this sample set
+passes the accuracy, F1, per-class recall, and golden-data gates. It replaces
+the previous demo production batch and runs a new local pipeline cycle:
+
+```powershell
+$payload = @{
+  records = @(
+    @{ sepal_length = 5.1; sepal_width = 3.5; petal_length = 1.4; petal_width = 0.2; species = 0 },
+    @{ sepal_length = 4.9; sepal_width = 3.1; petal_length = 1.5; petal_width = 0.1; species = 0 },
+    @{ sepal_length = 6.4; sepal_width = 3.2; petal_length = 4.5; petal_width = 1.5; species = 1 },
+    @{ sepal_length = 5.9; sepal_width = 3.0; petal_length = 4.2; petal_width = 1.5; species = 1 },
+    @{ sepal_length = 6.3; sepal_width = 3.3; petal_length = 6.0; petal_width = 2.5; species = 2 },
+    @{ sepal_length = 6.5; sepal_width = 3.0; petal_length = 5.5; petal_width = 1.8; species = 2 }
+  )
+} | ConvertTo-Json -Depth 5
+
+$result = Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8001/demo/records" `
+  -ContentType "application/json" `
+  -TimeoutSec 600 `
+  -Body $payload
+
+$result | Format-List
+```
+
+For a successful promotion, the response should show `retrain: True`,
+`outcome: promoted`, and `promoted: True`. Confirm the `EVALUATE — All 5 gates`
+and `Model promoted to Production` messages in `docker compose logs -f
+mlops-demo`. The Grafana retrain-trigger gauge shows that retraining was
+triggered; it does not indicate promotion. If this candidate is rejected,
+inspect the reported evaluation gates and confirm the current Production model
+and demo data are from the expected default setup.
 
 To verify Prometheus directly after the request:
 

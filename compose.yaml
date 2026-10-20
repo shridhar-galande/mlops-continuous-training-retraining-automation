@@ -1,7 +1,7 @@
 services:
   mlops-demo:
-    build: .
-    image: iris-mlops-demo:local
+    image: ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:latest
+    pull_policy: always
     environment:
       DEMO_MODE: "true"
       MLFLOW_TRACKING_URI: sqlite:////app/state/mlflow.db
