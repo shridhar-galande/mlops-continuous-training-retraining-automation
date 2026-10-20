@@ -17,7 +17,7 @@ retraining, evaluation gates, and MLflow tracking throughout.
 | `src/retrain_trigger.py` | Evaluates all 4 trigger types → logs decision to MLflow |
 | `src/pipeline.py` | **One command to run everything** — monitor → trigger → train → evaluate → promote |
 | `src/monitoring_service.py` | Runs the scheduled pipeline and exposes Prometheus metrics |
-| `Dockerfile` / `compose.yaml` | Builds and runs the local monitoring demo |
+| `Dockerfile` / `compose.yaml` | Runs the GHCR image with local monitoring services |
 | `monitoring/` | Prometheus configuration and provisioned Grafana dashboard |
 | `requirements.txt` | All Python dependencies |
 | `src/tests/test_pipeline.py` | 17 unit tests |
@@ -79,7 +79,8 @@ python src/pipeline.py --dry-run    # run everything but do NOT promote
 python src/pipeline.py --monitor-only  # check drift and stop, no retrain
 ```
 
-This is what the GitHub Actions workflow runs on every push and weekly schedule.
+The GitHub Actions workflow runs on qualifying pushes to `main`, on its weekly
+Sunday 00:00 UTC schedule, or when started manually from the Actions tab.
 
 The Actions workflow keeps model building separate from inference monitoring:
 it generates data, trains/evaluates and caches an initial Production model if
@@ -164,7 +165,7 @@ the **Build & Publish Docker Image** job in
 After a workflow run completes, open **Actions → Iris — Continuous Training
 Pipeline → the run**. The **Build & Publish Docker Image** job and the workflow
 run summary include a link to the GHCR package and a copyable command similar
-to `docker pull ghcr.io/galandeshridhar0-a11y/mlops-continuous-training-retraining-automation:run-123456789`.
+to `docker pull ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:run-123456789`.
 The unique `run-<run-id>` tag identifies that exact build. The commit tag
 (`sha-<commit>`) is also pushed, and successful builds from `main` update
 `:latest`.
@@ -207,11 +208,12 @@ docker compose ps
 docker compose logs -f mlops-demo
 ```
 
-The first startup creates demo data, trains and evaluates a baseline model,
-then immediately runs the monitoring pipeline. Allow a few minutes for initial
-training and model evaluation. Leave the logs command running to watch each
-pipeline stage; press `Ctrl+C` to stop following logs (the containers continue
-running).
+With new/empty Docker volumes, startup creates demo data and trains/evaluates
+the initial model before it starts the monitoring cycles. Later starts reuse
+the model, data, MLflow state, and history persisted in Docker volumes. Allow a
+few minutes for the first-time setup. Leave the logs command running to watch
+each pipeline stage; press `Ctrl+C` to stop following logs (the containers
+continue running).
 
 To build and run the application from source instead of pulling the GitHub
 Actions image:
@@ -219,8 +221,9 @@ Actions image:
 ```powershell
 docker pull prom/prometheus:v2.54.1
 docker pull grafana/grafana:11.2.0
-docker build -t ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:latest .
-docker compose up --pull never -d
+docker build -t iris-mlops-demo:local .
+$env:MLOPS_IMAGE = "iris-mlops-demo:local"
+docker compose -f compose.yaml -f compose.image.yaml up --pull never -d
 ```
 
 ### See the retraining trigger
@@ -258,7 +261,9 @@ candidate and prevent model promotion.
 Grafana's provisioned **Iris MLOps Retraining Demo** dashboard displays feature
 PSI, the monitoring drift signal, the retraining decision, individual trigger
 reasons, model accuracy/F1, and pipeline duration. Metrics appear after the
-first pipeline cycle completes. In Prometheus, open **Graph**, enter
+first pipeline cycle completes. The trigger panels are latest-cycle gauges and
+may return to `0` after a later cycle with no trigger; **Retraining decisions
+(total)** is the cumulative counter. In Prometheus, open **Graph**, enter
 `mlops_monitor_drift_trigger`, `mlops_retrain_trigger`, or
 `mlops_retrain_decisions_total`, then select **Execute**. A value of `1` for
 either trigger gauge means that the most recent completed cycle detected drift
@@ -324,10 +329,11 @@ promotion example, use the balanced six-sample batch below.
 To demonstrate a candidate that passes all five evaluation gates, post this
 balanced set of six labelled Iris samples. The API repeats them to the minimum
 batch size and applies the same drift shift, so the drift trigger still fires.
-This batch was verified against the default deployed image and the existing
-Production model (accuracy 0.9792); it scores 1.0 on the evaluation set and
-passes all five gates. It replaces the previous demo production batch and runs
-a new local pipeline cycle:
+This balanced batch was verified with the default model settings and demo
+dataset. The baseline-comparison gate also compares with the Production model
+already stored in your Docker volume, so a different model history can affect
+that gate. It replaces the previous demo production batch and runs a new local
+pipeline cycle:
 
 ```powershell
 $payload = @{
@@ -369,7 +375,7 @@ For a faster repeat demo, set a shorter interval before starting Compose:
 
 ```powershell
 $env:PIPELINE_INTERVAL_SECONDS = "60"
-docker compose up --build -d
+docker compose up -d
 ```
 
 This interval controls how often another complete monitoring/retraining
@@ -384,14 +390,15 @@ docker compose down
 ```
 
 Data, models, MLflow state, and monitoring history persist in Docker volumes.
-To start over with a clean baseline, remove those volumes:
+To irreversibly delete the persisted demo data, models, MLflow database, and
+monitoring history and start over with clean volumes:
 
-```bash
+```powershell
 docker compose down -v
 ```
 
 To build the application image without starting the full stack:
 
-```bash
+```powershell
 docker build -t iris-mlops-demo:local .
 ```
