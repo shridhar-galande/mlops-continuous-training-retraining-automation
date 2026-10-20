@@ -10,6 +10,8 @@ PyYAML~=6.0
 
 # MLflow — experiment tracking + model registry
 mlflow~=2.10
+# MLflow imports this pool class; older SQLAlchemy versions do not provide it.
+SQLAlchemy>=2.0.37,<2.1
 
 # Drift detection
 evidently~=0.4.33   # pin to 0.4.x; 0.7+ has breaking API changes

@@ -81,6 +81,14 @@ python src/pipeline.py --monitor-only  # check drift and stop, no retrain
 
 This is what the GitHub Actions workflow runs on every push and weekly schedule.
 
+The Actions workflow keeps model building separate from inference monitoring:
+it generates data, trains/evaluates and caches an initial Production model if
+one does not yet exist, then runs drift/performance monitoring against that
+model. Retraining runs only when the inference trigger fires (or you force it
+from `workflow_dispatch`), followed by all five evaluation gates and promotion.
+Model files and MLflow tracking/registry state are transferred between jobs and
+cached for subsequent workflow runs.
+
 ---
 
 ## View Results in MLflow UI
@@ -253,6 +261,21 @@ first pipeline cycle completes. In Prometheus, open **Graph**, enter
 either trigger gauge means that the most recent completed cycle detected drift
 or decided to retrain, respectively; the counter increases each time retraining
 is triggered.
+
+### Prometheus alert rules
+
+Prometheus loads [monitoring/alert_rules.yml](./monitoring/alert_rules.yml)
+on startup. After updating an already-running stack, apply the rules with
+`docker compose restart prometheus`. To view current and pending alerts, open
+<http://localhost:9090/alerts>. The rules cover a retraining decision, PSI above
+the `0.20` drift threshold, pipeline failure, an unreachable metrics exporter,
+and no successful pipeline run for 15 minutes. Rules evaluate after the
+configured `for` duration; for example, a retraining alert should appear
+shortly after the triggered run finishes.
+
+These rules make alerts visible in Prometheus; they do not send email, Slack, or
+push notifications. A notification receiver (typically Alertmanager) must be
+configured separately if you need alerts delivered outside the Prometheus UI.
 
 ### Push test records to trigger retraining now
 
