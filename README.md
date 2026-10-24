@@ -90,6 +90,71 @@ from `workflow_dispatch`), followed by all five evaluation gates and promotion.
 Model files and MLflow tracking/registry state are transferred between jobs and
 cached for subsequent workflow runs.
 
+### Execution trace: trigger to promotion
+
+For the local automated pipeline (`python src/pipeline.py`), the call path is:
+
+```text
+monitoring_service._execute_pipeline_cycle()  [when run as a service]
+  └─ pipeline.run_pipeline()
+      ├─ monitor.run_monitoring_cycle()
+      ├─ retrain_trigger.run_trigger_evaluation()
+      │   ├─ check_time()
+      │   ├─ check_performance()
+      │   ├─ check_drift()
+      │   └─ check_active_learning()  [when production data is available]
+      ├─ train.run_training(combine=True)  [only if retraining is triggered]
+      └─ evaluate.run_evaluation(auto_promote=not dry_run)
+          ├─ run all five evaluation gates
+          └─ promote candidate if all gates pass and auto-promotion is enabled
+```
+
+`src/pipeline.py` is also directly executable; its `__main__` entrypoint calls
+`run_pipeline()`. When used by `src/monitoring_service.py`, the service calls
+that same function once per cycle (immediately at startup, then at the
+configured interval).
+
+1. **Monitor:** `run_pipeline()` first calls `run_monitoring_cycle()` to inspect
+   drift and performance and records the monitoring result.
+2. **Decide:** Unless `--retrain` was supplied, the pipeline calls
+   `run_trigger_evaluation()`. It reads the reference and production data,
+   evaluates the enabled time, performance, and drift triggers, and checks
+   active-learning uncertainty when production rows exist. It combines the
+   results into `retrain` and `triggered_by`, then logs the decision to MLflow.
+   If no trigger fires, the pipeline records `no_retrain_needed` and exits
+   without training. With `--retrain`, it skips this trigger check and proceeds
+   directly to training.
+3. **Train:** When retraining proceeds, `run_training(combine=True)` trains on
+   the combined reference and production datasets, logs the run and model to
+   MLflow, and writes the candidate bundle to the configured
+   `candidate_model` path (by default, `models/candidate_model.pkl`).
+4. **Evaluate:** The pipeline calls `run_evaluation()`, enabling automatic
+   promotion unless `--dry-run` was supplied. Evaluation runs the five gates
+   listed below against the candidate. A failed gate rejects the candidate;
+   the pipeline records `evaluation_failed` and does not promote it.
+5. **Promote:** If every gate passes and automatic promotion is enabled,
+   evaluation transitions the candidate's MLflow Registry version through
+   Staging to Production, archives the previous Production version, and copies
+   the candidate bundle to the configured `current_model` path (by default,
+   `models/current_model.pkl`). It also appends a `model_promoted` event to the
+   configured retrain history log. That event supplies the last-retrain time
+   used by the time-based trigger on a later cycle. If Registry promotion
+   raises an exception, `evaluate.py` currently logs the failure and still
+   copies the candidate to the local model path; in that fallback case, verify
+   the Registry separately because a local copy does not confirm Registry
+   promotion.
+
+With `--dry-run`, the pipeline still monitors, evaluates triggers, trains, and
+runs the evaluation gates, but evaluation is called with automatic promotion
+disabled. The `--monitor-only` option exits after the monitoring stage.
+
+The GitHub Actions workflow has a separate job-based path: its `monitor` job
+invokes `run_trigger_evaluation(dry_run=True)` and publishes the decision as
+job outputs. The `retrain` job runs only if that output is true or manual
+`force_retrain` is enabled; it then runs `src/train.py --combine` and the
+evaluation/promotion steps. This workflow path does not call
+`pipeline.run_pipeline()`.
+
 ---
 
 ## View Results in MLflow UI
