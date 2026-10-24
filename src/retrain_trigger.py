@@ -349,7 +349,7 @@ def _print_trigger(name, r):
         else ("⏭  SKIP" if not r.get("enabled", True) else "✅ OK  ")
     )
     print(f"\n  [{s}]  {name}")
-    print(f"         reason: {r.get('reason','n/a')}")
+    print(f"         reason: {r.get('reason', 'n/a')}")
     if r.get("drifted_features"):
         print(f"         drifted: {', '.join(r['drifted_features'])}")
     if "days_since" in r and r["days_since"]:

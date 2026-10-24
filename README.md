@@ -230,7 +230,7 @@ the **Build & Publish Docker Image** job in
 After a workflow run completes, open **Actions → Iris — Continuous Training
 Pipeline → the run**. The **Build & Publish Docker Image** job and the workflow
 run summary include a link to the GHCR package and a copyable command similar
-to `docker pull ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:run-123456789`.
+to `docker pull ghcr.io/shridhar-galande/mlops-continuous-training-retraining-automation:latest`.
 The unique `run-<run-id>` tag identifies that exact build. The commit tag
 (`sha-<commit>`) is also pushed, and successful builds from `main` update
 `:latest`.
